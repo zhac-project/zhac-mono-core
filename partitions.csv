@@ -1,0 +1,16 @@
+# SPDX-FileCopyrightText: 2025-2026 Evgenij Cjura and project contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# zhac-mono-core partitions — 16 MB flash, single-slot app (no OTA).
+# Phase 3 splits the storage half into two SPIFFS partitions matching
+# the dual-chip layout: "scripts" is what lua_engine mounts (Lua sources
+# under /scripts/<name>.lua), and "spa" holds the Preact SPA dist/
+# tree that the HTTP server will serve in a later phase.
+#
+# Name,         Type,  SubType,  Offset,  Size
+nvs,            data,  nvs,      0x9000,  64K
+phy_init,       data,  phy,      ,        4K
+factory,        app,   factory,  ,        6M
+scripts,        data,  spiffs,   ,        2M
+spa,            data,  spiffs,   ,        7M
+coredump,       data,  coredump, ,        64K

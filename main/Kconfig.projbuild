@@ -1,0 +1,69 @@
+# SPDX-FileCopyrightText: 2025-2026 Evgenij Cjura and project contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# mono is fixed to TI ZNP — EZSP and C6 backends are not pulled into
+# the build. We still expose the *symbols* the znp_driver guards on
+# (#ifdef CONFIG_ZHAC_ZNP_UART_TX_GPIO …) so the same source file
+# compiles unchanged against this project's main, with S3-appropriate
+# defaults instead of the P4 ones in zhac-main-core/.
+
+menu "ZHAC mono — Zigbee NCP (ZNP)"
+    config ZHAC_NCP_ZNP
+        bool
+        default y
+        help
+            Always-on in mono. EZSP / C6 paths are intentionally
+            unreachable here.
+
+    config ZHAC_ZNP_UART_TX_GPIO
+        int "ZNP UART TX GPIO (S3 → CC2652 RX)"
+        default 17
+
+    config ZHAC_ZNP_UART_RX_GPIO
+        int "ZNP UART RX GPIO (CC2652 TX → S3)"
+        default 18
+
+    config ZHAC_ZNP_UART_RST_GPIO
+        int "ZNP nRESET GPIO"
+        default 19
+
+    config ZHAC_ZNP_UART_BSL_GPIO
+        int "ZNP BSL GPIO"
+        default 20
+endmenu
+
+menu "ZHAC Remote"
+
+config ZHAC_REMOTE_CLIENT_ENABLE
+    bool "Enable Remote WSS client (premium feature)"
+    default n
+    help
+        Compile + link the remote_client component. OFF (default):
+        zero flash + zero RAM; the mirror call in ws_event_broadcast
+        and all api_remote routes compile to nothing.
+
+config ZHAC_REMOTE_RX_BUF_KB
+    int "Remote RX buffer (KB, PSRAM)"
+    depends on ZHAC_REMOTE_CLIENT_ENABLE
+    default 8
+    range 4 32
+
+config ZHAC_REMOTE_TX_QUEUE_DEPTH
+    int "Remote TX queue depth (events)"
+    depends on ZHAC_REMOTE_CLIENT_ENABLE
+    default 16
+    range 4 64
+
+config ZHAC_REMOTE_PING_INTERVAL_S
+    int "WSS ping interval (s)"
+    depends on ZHAC_REMOTE_CLIENT_ENABLE
+    default 20
+    range 5 120
+
+config ZHAC_REMOTE_BACKOFF_MAX_S
+    int "Reconnect backoff cap (s)"
+    depends on ZHAC_REMOTE_CLIENT_ENABLE
+    default 60
+    range 5 600
+
+endmenu

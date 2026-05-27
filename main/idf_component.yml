@@ -1,0 +1,12 @@
+# SPDX-FileCopyrightText: 2025-2026 Evgenij Cjura and project contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# IDF Component Manager manifest. Mono only needs `georgik/lua` from
+# the registry — the rest of the dependency graph is wired via
+# EXTRA_COMPONENT_DIRS (sibling repos) and the local
+# components/mono_bridge shim. Keep this file minimal so the
+# component manager doesn't try to resolve anything it shouldn't.
+dependencies:
+  idf:
+    version: '>=6.0.0'
+  georgik/lua: ^5.5.0~7
