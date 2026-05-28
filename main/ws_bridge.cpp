@@ -71,7 +71,6 @@ static void send_err(int fd, uint32_t id, const char* err) {
 // settings / group command handlers placed above them.
 static void     reply_ok_or_err(int fd, uint32_t id, bool ok, const char* err);
 static uint64_t parse_ieee(const char* s);
-static void     ws_push(const char* event, JsonDocument& data);   // {event,data} broadcast
 
 static void cmd_ping(int fd, uint32_t id) {
     char buf[96];
@@ -646,7 +645,7 @@ static void cmd_remote_disconnect(int fd, uint32_t id, JsonDocument& doc) {
 #endif
 
 // ── push helper: {event, data} broadcast (+ relay mirror) ─────────────
-static void ws_push(const char* event, JsonDocument& data) {
+void ws_push(const char* event, JsonDocument& data) {
     if (ws_server_client_count() == 0) return;
     JsonDocument env; env["event"] = event; env["data"] = data;
     char buf[512]; size_t n = serializeJson(env, buf, sizeof(buf));

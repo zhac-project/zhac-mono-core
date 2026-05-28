@@ -17,6 +17,7 @@
 #include "ArduinoJson.h"
 #include "lua_engine.h"
 #include "lua_engine_scripts.h"
+#include "ws_bridge.h"
 #include <cstdio>
 #include <cstring>
 
@@ -104,6 +105,7 @@ static esp_err_t handle_scripts_item(httpd_req_t* req) {
 
     if (req->method == HTTP_PUT) {
         // Raw source body, up to kScriptCap-1 bytes.
+        bool existed = lua_script_cache_exists(name);
         char* src = (char*)heap_caps_malloc(kScriptCap, MALLOC_CAP_SPIRAM);
         if (!src) {
             httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "alloc");
@@ -119,7 +121,11 @@ static esp_err_t handle_scripts_item(httpd_req_t* req) {
         bool ok = lua_script_cache_write(name, src);
         heap_caps_free(src);
         httpd_resp_set_type(req, "application/json");
-        if (ok) return httpd_resp_sendstr(req, "{\"ok\":true}");
+        if (ok) {
+            JsonDocument p; p["name"] = name;
+            ws_push(existed ? "script.updated" : "script.added", p);
+            return httpd_resp_sendstr(req, "{\"ok\":true}");
+        }
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "write failed");
         return ESP_FAIL;
     }
@@ -127,9 +133,13 @@ static esp_err_t handle_scripts_item(httpd_req_t* req) {
     if (req->method == HTTP_DELETE) {
         bool ok = lua_script_cache_delete(name);
         httpd_resp_set_type(req, "application/json");
-        return ok
-            ? httpd_resp_sendstr(req, "{\"ok\":true}")
-            : (httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "not found"), ESP_FAIL);
+        if (ok) {
+            JsonDocument p; p["name"] = name;
+            ws_push("script.deleted", p);
+            return httpd_resp_sendstr(req, "{\"ok\":true}");
+        }
+        httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "not found");
+        return ESP_FAIL;
     }
 
     if (req->method == HTTP_POST && is_run) {
