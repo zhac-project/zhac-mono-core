@@ -79,12 +79,20 @@ CONFIG_LWIP_TCP_WND_DEFAULT=11520
 # webhooks). Optional but matches net-core parity.
 CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y
 
-# Zigbee radio — TI ZNP over UART. S3 GPIO defaults; override in
-# menuconfig if the actual board wires the CC2652 differently. (See
-# main/Kconfig.projbuild for the symbol declarations — keeping them
-# explicit here freezes the default and documents the wiring.)
+# Zigbee radio — ZNP/MT over UART to an H2 NCP (esp-znp-core), UART1 @ 115200.
+# Board wiring (S3 + H2 dev boards):
+#   H2 TX (esp-znp UART1 TX) ──> S3 GPIO17  = S3 UART1 RX
+#   H2 RX (esp-znp UART1 RX) <── S3 GPIO18  = S3 UART1 TX
+# FIX: TX/RX were 17/18 (S3-TX=17) — SWAPPED vs the wiring above, so the link
+# was dead. S3 GPIO17 is wired to the H2's TX, so it must be S3's RX. Corrected
+# to S3-TX=18 / S3-RX=17.
+# nRST/BSL are NOT wired to the H2 here (it self-resets), but znp_driver still
+# drives them as outputs, so they must sit on safe pins. The old 19/20 are the
+# S3 native-USB D-/D+ pins (driving them kills USB-Serial-JTAG); moved to free
+# GPIO4/5 — change if your board uses 4/5. Wire S3 GPIO4 -> H2 EN/RST later for
+# host-driven NCP recovery (znp_hw_reset).
 CONFIG_ZHAC_NCP_ZNP=y
-CONFIG_ZHAC_ZNP_UART_TX_GPIO=17
-CONFIG_ZHAC_ZNP_UART_RX_GPIO=18
-CONFIG_ZHAC_ZNP_UART_RST_GPIO=19
-CONFIG_ZHAC_ZNP_UART_BSL_GPIO=20
+CONFIG_ZHAC_ZNP_UART_TX_GPIO=18
+CONFIG_ZHAC_ZNP_UART_RX_GPIO=17
+CONFIG_ZHAC_ZNP_UART_RST_GPIO=4
+CONFIG_ZHAC_ZNP_UART_BSL_GPIO=5
