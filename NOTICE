@@ -1,0 +1,52 @@
+zhac-mono-core — ZHAC single-chip (ESP32-S3) firmware
+Copyright © 2025–2026 Evgenij Cjura and project contributors.
+
+Licensed under the GNU Affero General Public License v3 or later.
+See `LICENSE` and `LICENSES/AGPL-3.0-or-later.txt`.
+
+================================================================================
+Trademarks
+================================================================================
+
+"ZHAC" and any associated logos, product names, and marks are the
+exclusive property of the project maintainer. The AGPL license
+governing this firmware DOES NOT grant any right to use these names
+or marks. Forks and derivative works must choose a different
+product name and branding.
+
+================================================================================
+Relationship to the dual-chip repos
+================================================================================
+
+This is a single-chip variant that runs the gateway (net core) and the
+Zigbee/Lua engine (main core) on one ESP32-S3, calling directly across a
+compile-time bridge (`components/mono_bridge/`) instead of the SPI/HAP link.
+It reuses the shared ZHAC components rather than vendoring copies:
+
+- zhac-components — mixed Apache-2.0 / AGPL-3.0-or-later (same project, separate repo)
+- embedded-zhc    — Apache-2.0 (same project, separate repo)
+- zhac-main-core  — AGPL-3.0-or-later (same project; its `lua_cjson` MIT sources
+                    are reused here through a CMake override in
+                    `components/lua_cjson/`, not vendored a second time)
+- zhac-net-core   — AGPL-3.0-or-later (the gateway layer in `main/` derives from it)
+- www-spa         — AGPL-3.0-or-later (built into `dist/` and embedded)
+
+These are resolved from sibling checkouts at build time (see README).
+
+================================================================================
+Third-party dependencies pulled at build time (not vendored)
+================================================================================
+
+- ESP-IDF v6.0 — Apache License 2.0 (Espressif Systems).
+- FreeRTOS — MIT License (Amazon Web Services, Inc.).
+- lua_cjson — MIT License (Mark Pulford), reused from zhac-main-core.
+- ArduinoJson — MIT License, pulled transitively via zhac-components/hap_json.
+
+================================================================================
+License compatibility
+================================================================================
+
+All linked components are compatible with AGPL-3.0-or-later for inclusion in
+this firmware's combined binary, which is distributed under AGPL-3.0-or-later
+as a whole. Each upstream component retains its own license when used in
+isolation.
