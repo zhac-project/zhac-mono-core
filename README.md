@@ -16,8 +16,9 @@ in-process calls through a compile-time bridge (`components/mono_bridge/`).
 > **Status: experimental / work in progress.** This is a parity port that
 > tracks the dual-chip firmware. Its `main/` gateway layer is currently a fork
 > of `zhac-net-core/main/`, so dual-chip fixes do **not** propagate here
-> automatically — see *Divergence* below. It is not part of the `zhac-platform`
-> meta-repo build and is not a supported release target yet.
+> automatically — see *Divergence* below. It is published for transparency and
+> development, but is **not a supported release target yet** — not intended for
+> production flashing.
 
 ## Architecture
 
@@ -47,6 +48,11 @@ zhac-workspace/
 ```
 
 ```sh
+# clone the sibling repos next to this one (the build resolves them by path)
+for r in embedded-zhc zhac-components zhac-main-core zhac-net-core www-spa; do
+  git clone https://github.com/zhac-project/$r.git ../$r
+done
+
 source <path-to-esp-idf-v6.0>/export.sh
 export IDF_COMPONENT_OVERRIDE_PATH="$PWD/../zhac-components/components"
 export EMBEDDED_ZHC_PATH="$PWD/../embedded-zhc"
@@ -67,6 +73,14 @@ The build resolves shared components through three fallback paths
 here by hand until that layer is extracted into a shared component. Treat the
 dual-chip repos as the source of truth for gateway behaviour and mirror changes
 deliberately.
+
+A **port-drift alarm** keeps this honest: `tools/check-port-drift.sh` (run in CI
+by `.github/workflows/port-drift.yml`, including a weekly schedule) fails when a
+tracked net-core gateway source has changed since the last re-port. When it
+fires, follow the re-port checklist in [`tools/PORTING.md`](tools/PORTING.md) and
+re-baseline. This is the interim strategy; a full extraction into a shared
+gateway component is only warranted if mono-core becomes a supported release
+target.
 
 ## License
 

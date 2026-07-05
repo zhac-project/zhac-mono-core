@@ -1,0 +1,21 @@
+# SPDX-FileCopyrightText: 2025-2026 Evgenij Cjura and project contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Net-core gateway sources that zhac-mono-core/main/ forks (paths relative to
+# the zhac-net-core repo root). The port-drift alarm (tools/check-port-drift.sh)
+# hashes these in a net-core checkout and fails when any has changed since the
+# last re-port. Add a line here when a new net-core file is forked into mono;
+# remove one when a fork is retired or extracted into a shared component.
+main/api_devices.cpp
+main/api_groups.cpp
+main/api_remote.cpp
+main/api_rules.cpp
+main/api_scripts.cpp
+main/api_system.cpp
+main/groups_store.cpp
+main/groups_store.h
+main/log_ring.cpp
+main/log_ring.h
+main/main.cpp
+main/metrics_mqtt.cpp
+main/ws_bridge.cpp

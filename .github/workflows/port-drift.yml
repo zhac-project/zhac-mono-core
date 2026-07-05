@@ -1,0 +1,41 @@
+# SPDX-FileCopyrightText: 2025-2026 Evgenij Cjura and project contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Port-drift alarm: fails when the zhac-net-core gateway sources that
+# zhac-mono-core/main/ forks have changed since the last re-port. The weekly
+# schedule is the important trigger — a net-core change lands in a DIFFERENT
+# repo and would otherwise never touch this repo's CI. See tools/PORTING.md.
+name: port-drift
+
+on:
+  push:
+    paths: ['main/**', 'tools/port-*', '.github/workflows/port-drift.yml']
+  pull_request:
+    paths: ['main/**', 'tools/port-*', '.github/workflows/port-drift.yml']
+  schedule:
+    - cron: '17 6 * * 1'   # Mondays 06:17 UTC — catch net-core drift w/o a mono push
+  workflow_dispatch:
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout mono-core
+        uses: actions/checkout@v4
+        with:
+          path: zhac-mono-core
+
+      - name: Checkout net-core (fork source of truth)
+        uses: actions/checkout@v4
+        with:
+          repository: zhac-project/zhac-net-core
+          ref: master
+          path: zhac-net-core
+          # net-core is a public repo, so the default checkout needs no token.
+          # (If it is ever made private, add a read-only token secret here:
+          #  token: ${{ secrets.NETCORE_RO_TOKEN }} — a fine-grained PAT or
+          #  deploy key with read access.)
+
+      - name: Check gateway port drift
+        working-directory: zhac-mono-core
+        run: tools/check-port-drift.sh "$GITHUB_WORKSPACE/zhac-net-core"
