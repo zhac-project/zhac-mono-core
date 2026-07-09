@@ -566,6 +566,23 @@ static void cmd_device_attr_set(int fd, uint32_t id, JsonDocument& doc) {
         send_err(fd, id, "value must be bool / number / string");
         return;
     }
+
+    // Optimistic shadow update (mirrors main-core hap_dispatch on the dual-chip;
+    // mono has no P4 to do it). No-report Tuya LED drivers send no attribute
+    // report after a command, so without this the SPA + cloud never reflect the
+    // change. device_shadow emits SHADOW_OPTIMISTIC, which on_zcl_attr forwards
+    // to the WS + relay; the rule engine (ZCL_ATTR only) ignores it. Integer
+    // values only — the dual-chip path carries no string SET values either.
+    if (ok) {
+        const uint8_t vt = (std::strcmp(key, "state") == 0) ? VAL_BOOL : VAL_INT;
+        if (v.is<bool>()) {
+            device_shadow_update_optimistic(ieee_cp, key, vt, v.as<bool>() ? 1 : 0);
+        } else if (v.is<int>() || v.is<unsigned>() || v.is<long>() ||
+                   v.is<long long>()) {
+            device_shadow_update_optimistic(ieee_cp, key, vt,
+                                            (int32_t)v.as<long long>());
+        }
+    }
     reply_ok_or_err(fd, id, ok, "no zhc converter");
 }
 
@@ -943,6 +960,10 @@ static void on_device_leave(const Event& e) {
 void ws_bridge_install() {
     ws_server_set_rx_callback(ws_rx);
     event_bus_subscribe(EventType::ZCL_ATTR,    on_zcl_attr);
+    // Command-driven optimistic changes ride the same forwarder → WS + relay so
+    // no-report devices reflect in the SPA + cloud. The rule engine ignores it
+    // (subscribes to ZCL_ATTR only). Mirrors main-core hap_dispatch.
+    event_bus_subscribe(EventType::SHADOW_OPTIMISTIC, on_zcl_attr);
     event_bus_subscribe(EventType::DEVICE_JOIN, on_device_join);
     event_bus_subscribe(EventType::DEVICE_LEAVE, on_device_leave);
     ESP_LOGI(TAG, "WS rx (ping / status / device.{list,get,rename,delete,"
