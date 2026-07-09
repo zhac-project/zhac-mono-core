@@ -82,6 +82,27 @@ re-baseline. This is the interim strategy; a full extraction into a shared
 gateway component is only warranted if mono-core becomes a supported release
 target.
 
+Note that the device/rule logic itself is **not** forked: mono-core consumes the
+same `zhac-components` (`simple_rules`, `zap_store`, `hap_*`, …) and `embedded-zhc`
+as the dual-chip cores via `EXTRA_COMPONENT_DIRS`, so shared-component work (e.g.
+the `%value%` rule-action expressions) reaches mono-core automatically. Only the
+`main/` gateway layer above is hand-ported.
+
+### Known divergences
+
+Some net-core changes are deliberately held back rather than mirrored, and are
+tracked here:
+
+- **REST auth (deferred).** net-core is *secure-by-default*: every REST handler is
+  gated by `check_auth()` (`s3_internal.h`) alongside the WebSocket handshake, a
+  per-IP failure lockout, and a `token_is_hex32` bootstrap seed (net-core
+  `3e06adb`). mono-core's REST API is **currently unauthenticated** — its only
+  token path is the WebSocket `token.rotate` command in `ws_bridge.cpp`
+  (`sys_state.cpp`'s `ws_server_set_api_token` calls are vestigial). Porting the
+  gate is a multi-file security change, deferred while mono-core remains an
+  experimental parity branch. It **must** be added before mono-core is exposed on
+  an untrusted network. Tracked 2026-07-09.
+
 ## License
 
 AGPL-3.0-or-later. See [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE). "ZHAC" and
