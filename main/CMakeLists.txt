@@ -40,6 +40,7 @@ idf_component_register(
         hap_slave
         hap_protocol
         mono_bridge
+        zap_common
         event_bus
         metrics
         zap_store

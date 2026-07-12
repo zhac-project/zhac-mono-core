@@ -43,6 +43,7 @@
 #include "ws_bridge.h"
 
 #include "event_bus.h"
+#include "task_stacks.h"   // zhac::stack::kEventBus (zap_common)
 #include "zap_store.h"
 #include "device_shadow.h"
 #include "zhc_adapter.h"
@@ -128,6 +129,37 @@ static void bridge_smoke_test() {
     probe.seq = 2;
     ESP_LOGI(TAG, "smoke: slave_send  (inbound  → master cb)");
     hap_slave_send(probe);
+}
+
+// ── Event-bus pump ───────────────────────────────────────────────
+// The event bus delivers to per-subscriber queues; NOTHING runs a
+// subscriber until a pump task drains its type. On dual-chip this
+// pump lives on the P4 (TaskEventBus in main-core); mono is single-
+// chip, so it must run its own. Without it every ws_bridge subscriber
+// (attr.changed WS push, device join/leave, optimistic-shadow forward)
+// AND any rule/Lua reaction to a device attr change is silently inert.
+//
+// Drain range is derived from the enum (1 .. _COUNT-1), never a hand-
+// maintained list: a fixed 1..10 list on P4 silently stopped draining a
+// newly-added type (SHADOW_OPTIMISTIC = 11) → its subscriber queue
+// filled forever ("queue full type=11 — oldest overwritten"). Draining
+// a type with no subscribers is a cheap no-op. Poll cadence 20 ms.
+//
+// No task-WDT coverage here (unlike P4): mono never calls
+// esp_task_wdt_reconfigure, and a broadcast handler can block on a slow
+// WS/relay socket — arming the WDT would turn that into a reboot. That
+// hardening is deferred until mono is HW-soaked.
+static void task_event_bus(void*) {
+    ESP_LOGI(TAG, "TaskEventBus started (mono pump)");
+    while (true) {
+        uint8_t processed = 0;
+        for (uint8_t t = 1; t < static_cast<uint8_t>(EventType::_COUNT); t++) {
+            processed += event_bus_drain(static_cast<EventType>(t), 0);
+        }
+        if (processed == 0) {
+            vTaskDelay(pdMS_TO_TICKS(20));   // idle yield; matches P4 cadence
+        }
+    }
 }
 
 extern "C" void app_main() {
@@ -270,6 +302,21 @@ extern "C" void app_main() {
         // (zigbee_mgr, simple_rules, http stack, …) is initialised.
         lua_engine_load_all();
         ESP_LOGI(TAG, "lua_engine: scripts loaded");
+    }
+
+    // Start the event-bus pump LAST: every service its subscribers reach
+    // (ws_server, remote_client, mqtt) is now initialised, so a drained
+    // event can't call into an uninitialised subsystem. Stack + priority
+    // mirror P4's TaskEventBus (kEventBus = 8 KB, prio 2): the pump runs
+    // simple_rules' dispatch_event → execute_rule (zigbee.set / publish /
+    // script.run) in THIS task's context, same as P4, so it needs the same
+    // depth — a smaller stack would risk a runtime overflow. Prio 2 sits
+    // below the WiFi/lwIP stack so networking stays responsive.
+    if (xTaskCreate(task_event_bus, "TaskEventBus", zhac::stack::kEventBus,
+                    nullptr, 2, nullptr) != pdPASS) {
+        ESP_LOGE(TAG, "TaskEventBus create FAILED — event subscribers inert");
+    } else {
+        ESP_LOGI(TAG, "TaskEventBus up — event subscribers now serviced");
     }
 
     int tick = 0;
