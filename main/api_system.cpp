@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 #include "api_system.h"
+#include "auth.h"
 
 #include <cinttypes>
 #include <cstdio>
@@ -11,6 +12,7 @@
 #include "ArduinoJson.h"
 #include "esp_log.h"
 #include "mqtt_gw.h"
+#include "ntp_cfg.h"
 #include "sys_state.h"
 #include "zigbee_diagnostics.h"
 #include "log_ring.h"
@@ -36,6 +38,10 @@ bool system_apply_settings(const char* json, size_t len) {
         if (doc["mqtt_enabled"].as<bool>()) mqtt_gw_on_sta_up();
         else                                 mqtt_gw_stop();
     }
+
+    // Time server: ntp_cfg persists it and restarts SNTP, no reboot.
+    if (doc["ntp_server"].is<const char*>() &&
+        !ntp_cfg_set_server(doc["ntp_server"].as<const char*>())) return false;
 
     // System flags (sys_state persists + applies).
     if (doc["timezone"].is<const char*>())
@@ -144,23 +150,23 @@ bool api_system_register(httpd_handle_t hd) {
 
     u.uri = "/api/settings"; u.method = HTTP_POST;
     u.handler = handle_settings_set;
-    httpd_register_uri_handler(hd, &u);
+    auth_register_uri(hd, &u);
 
     u.uri = "/api/token/rotate"; u.method = HTTP_POST;
     u.handler = handle_token_rotate;
-    httpd_register_uri_handler(hd, &u);
+    auth_register_uri(hd, &u);
 
     u.uri = "/api/system/token/rotate"; u.method = HTTP_POST;   // net-core URI alias
     u.handler = handle_token_rotate;
-    httpd_register_uri_handler(hd, &u);
+    auth_register_uri(hd, &u);
 
     u.uri = "/api/diagnostics/unhandled"; u.method = HTTP_GET;
     u.handler = handle_diagnostics_unhandled;
-    httpd_register_uri_handler(hd, &u);
+    auth_register_uri(hd, &u);
 
     u.uri = "/api/logs"; u.method = HTTP_GET;
     u.handler = handle_logs_get;
-    httpd_register_uri_handler(hd, &u);
+    auth_register_uri(hd, &u);
 
     ESP_LOGI(TAG, "settings / token / diagnostics routes registered");
     return true;

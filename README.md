@@ -93,15 +93,14 @@ the `%value%` rule-action expressions) reaches mono-core automatically. Only the
 Some net-core changes are deliberately held back rather than mirrored, and are
 tracked here:
 
-- **REST auth (deferred).** net-core is *secure-by-default*: every REST handler is
-  gated by `check_auth()` (`s3_internal.h`) alongside the WebSocket handshake, a
-  per-IP failure lockout, and a `token_is_hex32` bootstrap seed (net-core
-  `3e06adb`). mono-core's REST API is **currently unauthenticated** — its only
-  token path is the WebSocket `token.rotate` command in `ws_bridge.cpp`
-  (`sys_state.cpp`'s `ws_server_set_api_token` calls are vestigial). Porting the
-  gate is a multi-file security change, deferred while mono-core remains an
-  experimental parity branch. It **must** be added before mono-core is exposed on
-  an untrusted network. Tracked 2026-07-09.
+- **REST auth — resolved 2026-09-20.** `main/auth.cpp` is the wired build's module (itself
+  the dual-chip S3's scheme): every REST route except `GET /api/status`, the auth routes and
+  the web UI needs the API token (`X-Api-Key`), every WebSocket must send it in a first
+  `auth` message, the web UI trades the admin password for it, five wrong attempts in a
+  minute lock that address out, and a fresh hub only lets the first visitor set the password
+  within ten minutes of power-on. Secure by default (`CONFIG_ZHAC_API_AUTH_DEFAULT_ENABLED`);
+  a hub upgraded from an earlier build asks for a password on its next visit. Not yet run on
+  hardware.
 
 ## License
 

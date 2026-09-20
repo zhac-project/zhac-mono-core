@@ -9,6 +9,7 @@
 
 #include <cinttypes>
 #include <cstdio>
+#include <ctime>
 
 #include "ArduinoJson.h"
 #include "esp_app_desc.h"
@@ -21,8 +22,10 @@
 #include "esp_timer.h"
 #include "esp_wifi.h"
 #include "mqtt_gw.h"
+#include "ntp_cfg.h"
 #include "sdkconfig.h"
 #include "sys_state.h"
+#include "auth.h"
 #include "ws_server.h"
 #include "zigbee_mgr.h"
 #include "zigbee_pool.h"
@@ -97,6 +100,15 @@ static esp_err_t handle_get_status(httpd_req_t* req) {
     doc["metrics_enabled"] = sys_metrics_enabled();
     doc["ap_disabled"]     = sys_ap_disabled();
     doc["auth_enabled"]    = sys_auth_enabled();
+    // First-boot set-up card + its ten-minute window (auth.cpp / zap_setup_window.h).
+    doc["auth_setup_required"] = sys_auth_enabled() && !auth_password_is_set();
+    doc["auth_setup_secs_left"] = auth_setup_secs_left();   // 0 = closed; power-cycle the hub to reopen
+    doc["clock_set"]       = time(nullptr) >= 1577836800;   // schedules wait until it is
+    doc["ntp_server"]      = ntp_cfg_server();
+    {   // the router's offer in use (DHCP option 42), when there is one
+        char dhcp[48];
+        if (ntp_cfg_dhcp_server(dhcp, sizeof(dhcp))) doc["ntp_dhcp_server"] = dhcp;
+    }
     doc["log_mqtt_enabled"] = log_sinks_get_mqtt_enabled();
     doc["log_ws_enabled"]   = log_sinks_get_ws_enabled();
 #ifdef CONFIG_ZHAC_REMOTE_CLIENT_ENABLE

@@ -12,6 +12,7 @@
 // Reboot-to-apply: hot-rotating an APSTA STA config without disrupting AP
 // clients is finicky, so credential changes reboot (response flushed first).
 #include "api_wifi.h"
+#include "auth.h"
 
 #include <cstring>
 
@@ -131,7 +132,7 @@ bool api_wifi_register(httpd_handle_t hd) {
     httpd_uri_t u{};
     for (auto& r : routes) {
         u.uri = r.uri; u.method = r.m; u.handler = r.h;
-        httpd_register_uri_handler(hd, &u);
+        auth_register_uri(hd, &u);
     }
     ESP_LOGI(TAG, "wifi routes registered (/api/wifi[/status|scan|connect|disconnect])");
     return true;

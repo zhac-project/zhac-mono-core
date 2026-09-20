@@ -19,6 +19,7 @@
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "esp_netif.h"
+#include "ntp_cfg.h"
 #include "esp_wifi.h"
 #include "nvs.h"
 #include "nvs_flash.h"
@@ -46,6 +47,16 @@ static void on_wifi_event(void* /*arg*/, esp_event_base_t base,
     } else if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
         s_sta_connected = true;
         ESP_LOGI(TAG, "STA got IP");
+
+        // The S3 has no RTC, so the clock starts at 1970 until SNTP sets it:
+        // device "last seen" is only written once the time is past 2020, and
+        // Time#Cron rules and the timezone setting need real time. ntp_cfg
+        // owns the server (public default, or a local one from Settings).
+        static bool s_sntp_started = false;
+        if (!s_sntp_started) {
+            s_sntp_started = true;
+            ntp_cfg_start();
+        }
     }
 }
 
@@ -102,6 +113,7 @@ void wifi_start() {
         ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
         ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &ap_cfg));
     }
+    ntp_cfg_init();   // before the first DHCP lease: may ask the router for a time server
     ESP_ERROR_CHECK(esp_wifi_start());
 
     uint8_t mac[6]{};

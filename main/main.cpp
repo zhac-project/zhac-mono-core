@@ -54,6 +54,7 @@
 #include "simple_rules.h"
 #include "device_options.h"
 #include "sys_state.h"
+#include "auth.h"
 #include "api_system.h"
 #include "zigbee_diagnostics.h"
 #include "api_groups.h"
@@ -175,8 +176,10 @@ extern "C" void app_main() {
         ESP_ERROR_CHECK(nvs_err);
     }
 
-    // System flags + API-auth token (NVS-backed). Must follow nvs_flash_init.
+    // System flags (NVS-backed). Must follow nvs_flash_init.
     sys_state_init();
+    // Access control: token + admin password, secure by default (auth.cpp).
+    auth_init();
 
     log_ring_init();   // PSRAM log ring + esp_log vprintf hook (capture early)
 
@@ -259,6 +262,7 @@ extern "C" void app_main() {
         httpd_register_uri_handler(hd, &root);
         ESP_LOGI(TAG, "HTTP / handler registered on ws_server httpd");
         api_status_register(hd);
+        auth_register(hd);   // /api/auth/login|setup (public), /api/auth/password
         api_devices_register(hd);
         api_wifi_register(hd);
         api_rules_register(hd);

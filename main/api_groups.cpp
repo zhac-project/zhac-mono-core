@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 #include "api_groups.h"
+#include "auth.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -216,7 +217,7 @@ bool api_groups_register(httpd_handle_t hd) {
     };
     for (auto& r : routes) {
         u.uri = r.uri; u.method = r.m; u.handler = r.h;
-        httpd_register_uri_handler(hd, &u);
+        auth_register_uri(hd, &u);
     }
     ESP_LOGI(TAG, "group routes registered");
     return true;

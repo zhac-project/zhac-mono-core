@@ -67,3 +67,17 @@ config ZHAC_REMOTE_BACKOFF_MAX_S
     range 5 600
 
 endmenu
+
+menu "ZHAC access"
+    config ZHAC_API_AUTH_DEFAULT_ENABLED
+        bool "Require sign-in for the REST and WebSocket APIs on a fresh unit"
+        default y
+        help
+            Secure by default, as on the dual-chip and wired builds: a fresh
+            hub asks the first visitor to choose the admin password (within
+            ten minutes of power-on), and every API call needs the token that
+            password unlocks. A choice stored from the web UI (Settings ->
+            Auth) always wins over this default. Turn it off only for a lab
+            bench -- auth off means anyone on the LAN can run Lua, reflash and
+            reset the network.
+endmenu

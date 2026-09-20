@@ -10,6 +10,7 @@
 // All direct in-process calls. No HAP, no roundtrip. JSON I/O via
 // ArduinoJson against bounded buffers.
 #include "api_devices.h"
+#include "auth.h"
 #include "device_options.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
@@ -81,6 +82,9 @@ static esp_err_t handle_get_devices(httpd_req_t* req) {
                 case VAL_INT:
                 case VAL_BOOL: attrs[sa[j].key] = sa[j].int_val; break;
                 case VAL_STR:  attrs[sa[j].key] = sa[j].str_val; break;
+                // Stored x100; divided here, at the JSON boundary, as on the
+                // other builds. Rules and Lua keep the raw x100 integer.
+                case VAL_FLOAT: attrs[sa[j].key] = static_cast<float>(sa[j].int_val) / 100.0f; break;
                 default: break;
             }
         }
@@ -337,33 +341,33 @@ bool api_devices_register(httpd_handle_t hd) {
 
     u.uri = "/api/devices"; u.method = HTTP_GET;
     u.handler = handle_get_devices;
-    httpd_register_uri_handler(hd, &u);
+    auth_register_uri(hd, &u);
 
     u.uri = "/api/permit_join"; u.method = HTTP_POST;
     u.handler = handle_permit_join;
-    httpd_register_uri_handler(hd, &u);
+    auth_register_uri(hd, &u);
 
     u.uri = "/api/device_state"; u.method = HTTP_POST;
     u.handler = handle_device_state;
-    httpd_register_uri_handler(hd, &u);
+    auth_register_uri(hd, &u);
 
     u.uri = "/api/device/reinterview"; u.method = HTTP_POST;
     u.handler = handle_device_reinterview;
-    httpd_register_uri_handler(hd, &u);
+    auth_register_uri(hd, &u);
 
     u.uri = "/api/device/configure"; u.method = HTTP_POST;
     u.handler = handle_device_configure;
-    httpd_register_uri_handler(hd, &u);
+    auth_register_uri(hd, &u);
 
     u.uri = "/api/device/options"; u.method = HTTP_POST;
     u.handler = handle_device_options;
-    httpd_register_uri_handler(hd, &u);
+    auth_register_uri(hd, &u);
 
     // Net-core URI aliases (the shared SPA targets these paths).
-    u.uri = "/api/device/list";        u.method = HTTP_GET;  u.handler = handle_get_devices;    httpd_register_uri_handler(hd, &u);
-    u.uri = "/api/device/attr/set";    u.method = HTTP_POST; u.handler = handle_device_state;   httpd_register_uri_handler(hd, &u);
-    u.uri = "/api/device/options/set"; u.method = HTTP_POST; u.handler = handle_device_options; httpd_register_uri_handler(hd, &u);
-    u.uri = "/api/zigbee/permit_join"; u.method = HTTP_POST; u.handler = handle_permit_join;    httpd_register_uri_handler(hd, &u);
+    u.uri = "/api/device/list";        u.method = HTTP_GET;  u.handler = handle_get_devices;    auth_register_uri(hd, &u);
+    u.uri = "/api/device/attr/set";    u.method = HTTP_POST; u.handler = handle_device_state;   auth_register_uri(hd, &u);
+    u.uri = "/api/device/options/set"; u.method = HTTP_POST; u.handler = handle_device_options; auth_register_uri(hd, &u);
+    u.uri = "/api/zigbee/permit_join"; u.method = HTTP_POST; u.handler = handle_permit_join;    auth_register_uri(hd, &u);
 
     ESP_LOGI(TAG, "GET /api/devices, POST /api/permit_join, "
                   "POST /api/device_state, "

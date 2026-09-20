@@ -13,6 +13,7 @@ idf_component_register(
         "api_devices.cpp"
         "device_options.cpp"
         "sys_state.cpp"
+        "auth.cpp"
         "api_system.cpp"
         "groups_store.cpp"
         "api_groups.cpp"
@@ -36,6 +37,8 @@ idf_component_register(
         esp_event
         esp_netif
         esp_http_server
+        # auth.cpp: PSA hashing for the admin password; getpeername for lockout.
+        mbedtls
         hap_master
         hap_slave
         hap_protocol
@@ -58,6 +61,7 @@ idf_component_register(
         remote_client
         mqtt
         mqtt_gw
+        ntp_cfg
         arduinojson
         spiffs
 )

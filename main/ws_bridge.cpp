@@ -19,6 +19,7 @@
 
 #include "ws_bridge.h"
 #include "ws_server.h"
+#include "auth.h"
 #include "event_bus.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -45,15 +46,20 @@
 #include "simple_rules.h"
 #include "rule_store.h"
 #include "zap_common.h"
+#include "zap_clock.h"
+#include "ntp_cfg.h"
 #include "lua_engine.h"
 #include "lua_engine_scripts.h"
 #include "nvs.h"
 #include "esp_random.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include <ctime>
 #include <cstdio>
 #include <cstdlib>
+#include <cmath>
 #include <cstring>
+#include <sys/time.h>
 #include <cinttypes>
 
 static const char* TAG = "ws_bridge";
@@ -71,6 +77,25 @@ static void send_err(int fd, uint32_t id, const char* err) {
 // settings / group command handlers placed above them.
 static void     reply_ok_or_err(int fd, uint32_t id, bool ok, const char* err);
 static uint64_t parse_ieee(const char* s);
+
+// time.set {epoch}: the browser's clock for a hub that has none -- no RTC, and
+// SNTP needs the internet. It fills an unset clock only (zap_clock.h), so a
+// browser can start the schedules of an offline hub but never moves a clock
+// SNTP has set. Reply data {"set":false} means the clock was already set.
+static void cmd_time_set(int fd, uint32_t id, JsonDocument& doc) {
+    const int64_t epoch = doc["args"]["epoch"] | static_cast<int64_t>(0);
+    if (!zap_clock_epoch_ok(epoch)) { send_err(fd, id, "bad epoch"); return; }
+    bool set = false;
+    if (!zap_clock_is_set(time(nullptr))) {
+        const timeval tv{static_cast<time_t>(epoch), 0};
+        set = settimeofday(&tv, nullptr) == 0;
+        if (set) ESP_LOGI(TAG, "clock set from the web UI");
+    }
+    char buf[64];
+    const int n = snprintf(buf, sizeof(buf), "{\"id\":%" PRIu32 ",\"ok\":true,\"data\":{\"set\":%s}}",
+                           id, set ? "true" : "false");
+    ws_server_reply(fd, buf, n);
+}
 
 static void cmd_ping(int fd, uint32_t id) {
     char buf[96];
@@ -91,7 +116,11 @@ static void cmd_status(int fd, uint32_t id) {
     d["psram_free"]      = (uint32_t)heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
     d["zigbee_ok"]       = !zigbee_mgr_crashed();
     d["mqtt_connected"]  = mqtt_gw_is_connected();
-    char buf[256];
+    // Schedules (cron rules, Lua on_cron) wait until SNTP has set the clock;
+    // the web UI's Rules page says so while this is false.
+    d["clock_set"]       = time(nullptr) >= 1577836800;
+    d["ntp_server"]      = ntp_cfg_server();
+    char buf[352];
     size_t n = serializeJson(doc, buf, sizeof(buf));
     ws_server_reply(fd, buf, n);
 }
@@ -343,15 +372,28 @@ static void cmd_device_list(int fd, uint32_t id) {
     for (uint16_t i = 0; i < cnt; i++) {
         const ZapDevice& d = pool[i];
         if (zap_dev_is_removed(&d)) continue;
+        // Friendly vendor / model from the matched definition, raw strings
+        // otherwise -- the same row contract as hap_json's device_list and
+        // the wired build (the web UI reads `vendor`, `name`, `known`).
+        char vendor_buf[32] = {};
+        char model_buf[32]  = {};
+        zhac_adapter_resolve_labels(d.model_id, d.manufacturer_name,
+                                    vendor_buf, sizeof(vendor_buf),
+                                    model_buf,  sizeof(model_buf));
+        const char* vendor_out = vendor_buf[0] ? vendor_buf : d.manufacturer_name;
+        const char* model_out  = model_buf[0]  ? model_buf  : d.model_id;
         char row[512];
         int rn = snprintf(row, sizeof(row),
             "%s{\"ieee\":\"0x%016" PRIX64 "\",\"nwk\":%u,"
-            "\"friendly\":\"%s\",\"model\":\"%s\",\"manufacturer\":\"%s\","
+            "\"friendly\":\"%s\",\"name\":\"%s\","
+            "\"model\":\"%s\",\"manufacturer\":\"%s\","
+            "\"vendor\":\"%s\",\"model_id\":\"%s\",\"known\":%s,"
             "\"last_seen\":%" PRId64 ",\"lqi\":%u,\"battery\":%d,"
             "\"ep_count\":%u}",
             first ? "" : ",",
             d.ieee_addr, d.nwk_addr,
-            d.friendly_name, d.model_id, d.manufacturer_name,
+            d.friendly_name, d.friendly_name, model_out, d.manufacturer_name,
+            vendor_out, d.model_id, model_buf[0] ? "true" : "false",
             (int64_t)d.last_seen, d.link_quality, d.battery_pct,
             d.endpoint_count);
         if (rn <= 0 || pos + rn + 4 >= 8 * 1024) break;  // truncate gracefully
@@ -428,6 +470,7 @@ static void cmd_device_get(int fd, uint32_t id, JsonDocument& doc) {
             case VAL_INT:
             case VAL_BOOL: attrs[sa[j].key] = sa[j].int_val; break;
             case VAL_STR:  attrs[sa[j].key] = sa[j].str_val; break;
+            case VAL_FLOAT: attrs[sa[j].key] = static_cast<float>(sa[j].int_val) / 100.0f; break;  // stored x100
             default: break;
         }
     }
@@ -562,6 +605,12 @@ static void cmd_device_attr_set(int fd, uint32_t id, JsonDocument& doc) {
         ok = zhac_adapter_send_uint(ieee_cp, model_cp, manu_cp,
                                      nwk_cp, ep_cp, key,
                                      v.as<uint64_t>());
+    } else if (v.is<float>()) {
+        // A decimal (21.5): the converter scales it; an integer-only
+        // converter refuses it, and that comes back as "no zhc converter"
+        // instead of a silently truncated 21.
+        ok = zhac_adapter_send_number(ieee_cp, model_cp, manu_cp,
+                                       nwk_cp, ep_cp, key, v.as<double>());
     } else {
         send_err(fd, id, "value must be bool / number / string");
         return;
@@ -581,6 +630,10 @@ static void cmd_device_attr_set(int fd, uint32_t id, JsonDocument& doc) {
                    v.is<long long>()) {
             device_shadow_update_optimistic(ieee_cp, key, vt,
                                             (int32_t)v.as<long long>());
+        }
+        else if (v.is<float>()) {   // shadow keeps decimals as VAL_FLOAT ×100
+            device_shadow_update_optimistic(ieee_cp, key, VAL_FLOAT,
+                                            (int32_t)lround(v.as<double>() * 100.0));
         }
     }
     reply_ok_or_err(fd, id, ok, "no zhc converter");
@@ -827,9 +880,26 @@ static void dispatch_envelope(int fd, JsonDocument& doc) {
     const char* cmd = doc["cmd"] | (const char*)nullptr;
     if (!cmd) { send_err(fd, id, "missing cmd"); return; }
 
+    // With auth on, a browser socket must send {"cmd":"auth","args":{"token":
+    // ...}} before anything else runs -- the token rides a frame, never the
+    // URL (as on the dual-chip S3 and the wired build). fd < 0 is the remote
+    // relay, which has its own authentication.
+    if (auth_enabled() && fd >= 0 && !ws_server_fd_is_authed(fd)) {
+        const bool is_auth = std::strcmp(cmd, "auth") == 0;
+        if (is_auth && auth_check_token(doc["args"]["token"] | "")) {
+            ws_server_fd_set_authed(fd);
+            reply_ok_or_err(fd, id, true, nullptr);
+        } else {
+            send_err(fd, id, is_auth ? "auth failed" : "auth required");
+        }
+        return;
+    }
+    if (std::strcmp(cmd, "auth")               == 0) { reply_ok_or_err(fd, id, true, nullptr); return; }
+
     if (std::strcmp(cmd, "ping")               == 0) { cmd_ping(fd, id);   return; }
     if (std::strcmp(cmd, "status")             == 0) { cmd_status(fd, id); return; }
     if (std::strcmp(cmd, "status.get")         == 0) { cmd_status(fd, id); return; }
+    if (std::strcmp(cmd, "time.set")           == 0) { cmd_time_set(fd, id, doc); return; }
     if (std::strcmp(cmd, "device.list")        == 0) { cmd_device_list(fd, id);              return; }
     if (std::strcmp(cmd, "device.get")         == 0) { cmd_device_get(fd, id, doc);          return; }
     if (std::strcmp(cmd, "device.rename")      == 0) { cmd_device_rename(fd, id, doc);       return; }
@@ -896,9 +966,9 @@ extern "C" void dispatch_envelope_for_remote(int fd, JsonDocument& doc) {
 // to walk the client list. Cheap enough for the 1-10 events/s steady
 // state we expect with 20-30 devices.
 //
-// `value` is rendered as integer or string depending on val_type so
-// the SPA doesn't have to guess. Numeric reasonable for state/level
-// and string for action attrs.
+// `value` is rendered as integer, decimal or string depending on val_type so
+// the SPA doesn't have to guess: integers for state/level, decimals for
+// VAL_FLOAT readings (stored x100), strings for action attrs.
 
 static void on_zcl_attr(const Event& e) {
     if (ws_server_client_count() == 0) return;
@@ -914,12 +984,16 @@ static void on_zcl_attr(const Event& e) {
         case VAL_INT:
         case VAL_BOOL: d["value"] = z.int_val; break;
         case VAL_STR:  d["value"] = z.str_val; break;
+        case VAL_FLOAT: d["value"] = static_cast<float>(z.int_val) / 100.0f; break;  // stored x100
         default: break;
     }
     d["nwk"]      = z.nwk;
     d["ep"]       = z.ep;
     d["cluster"]  = z.cluster;
     d["attr_id"]  = z.attr_id;
+    // The web UI takes this as the device's "last seen". Left out until SNTP
+    // has set the clock (2020 or later), so the UI keeps the value it has.
+    if (const time_t t = time(nullptr); t >= 1577836800) d["ts"] = static_cast<int64_t>(t);
     char buf[288];
     size_t n = serializeJson(doc, buf, sizeof(buf));
     ws_server_broadcast(buf, n);
