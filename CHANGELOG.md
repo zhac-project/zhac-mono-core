@@ -11,6 +11,11 @@ an `## [Unreleased]` section accumulates work, and its contents become the relea
 
 ### Changed
 
+- **Rule pushes come from the rule engine, not the transport.** `rule.added` / `rule.updated`
+  / `rule.deleted` are built from the `RULE_CHANGED` event, so a rule created, edited, toggled
+  or deleted over REST or by a backup restore now updates open Rules pages and the cloud relay;
+  before, only WebSocket edits did.
+
 - **Device rename, delete and permit join go through `device_cmd`** (zhac-components). Rename
   now validates names (quotes used to blank the Devices page) and reloads the rule engine's
   name table; delete asks the device to leave and hides it (soft) or wipes everything (hard),
