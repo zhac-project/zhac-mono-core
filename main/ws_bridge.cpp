@@ -23,6 +23,8 @@
 #include "auth.h"
 #include "event_bus.h"
 #include "esp_log.h"
+#include "device_cmd.h"
+#include "device_cmd_json.h"
 #include "esp_timer.h"
 #include "esp_heap_caps.h"
 #include "zigbee_mgr.h"
@@ -576,69 +578,14 @@ static void cmd_device_attr_set(int fd, uint32_t id, JsonDocument& doc) {
     if (!ieee_s || !key) { send_err(fd, id, "missing ieee or key"); return; }
     uint64_t ieee = parse_ieee(ieee_s);
     if (ieee == 0) { send_err(fd, id, "bad ieee"); return; }
-
-    zigbee_pool_lock();
-    ZapDevice* dev = pool_find_by_ieee(ieee);
-    if (!dev) {
-        zigbee_pool_unlock();
-        send_err(fd, id, "device not found");
+    // One attribute-set path for every transport (device_cmd).
+    DevCmdValue val;
+    if (!device_cmd_value_from_json(doc["args"]["value"], &val)) {
+        send_err(fd, id, device_cmd_result_str(DEVCMD_BAD_VALUE));
         return;
     }
-    const uint64_t ieee_cp = dev->ieee_addr;
-    const uint16_t nwk_cp  = dev->nwk_addr;
-    const uint8_t  ep_cp   = dev->endpoints[0] ? dev->endpoints[0] : 1;
-    // Sized to exceed ZapDevice::{model_id, manufacturer_name} (~34 B
-    // each); 32-byte dest trips -Werror=format-truncation.
-    char model_cp[64], manu_cp[64];
-    snprintf(model_cp, sizeof(model_cp), "%s", dev->model_id);
-    snprintf(manu_cp,  sizeof(manu_cp),  "%s", dev->manufacturer_name);
-    zigbee_pool_unlock();
-
-    JsonVariantConst v = doc["args"]["value"];
-    bool ok = false;
-    if (v.is<bool>()) {
-        ok = zhac_adapter_send_bool(ieee_cp, model_cp, manu_cp,
-                                     nwk_cp, ep_cp, key, v.as<bool>());
-    } else if (v.is<const char*>()) {
-        ok = zhac_adapter_send_string(ieee_cp, model_cp, manu_cp,
-                                       nwk_cp, ep_cp, key, v.as<const char*>());
-    } else if (v.is<int>() || v.is<unsigned>() || v.is<long>() ||
-                v.is<long long>()) {
-        ok = zhac_adapter_send_uint(ieee_cp, model_cp, manu_cp,
-                                     nwk_cp, ep_cp, key,
-                                     v.as<uint64_t>());
-    } else if (v.is<float>()) {
-        // A decimal (21.5): the converter scales it; an integer-only
-        // converter refuses it, and that comes back as "no zhc converter"
-        // instead of a silently truncated 21.
-        ok = zhac_adapter_send_number(ieee_cp, model_cp, manu_cp,
-                                       nwk_cp, ep_cp, key, v.as<double>());
-    } else {
-        send_err(fd, id, "value must be bool / number / string");
-        return;
-    }
-
-    // Optimistic shadow update (mirrors main-core hap_dispatch on the dual-chip;
-    // mono has no P4 to do it). No-report Tuya LED drivers send no attribute
-    // report after a command, so without this the SPA + cloud never reflect the
-    // change. device_shadow emits SHADOW_OPTIMISTIC, which on_zcl_attr forwards
-    // to the WS + relay; the rule engine (ZCL_ATTR only) ignores it. Integer
-    // values only — the dual-chip path carries no string SET values either.
-    if (ok) {
-        const uint8_t vt = (std::strcmp(key, "state") == 0) ? VAL_BOOL : VAL_INT;
-        if (v.is<bool>()) {
-            device_shadow_update_optimistic(ieee_cp, key, vt, v.as<bool>() ? 1 : 0);
-        } else if (v.is<int>() || v.is<unsigned>() || v.is<long>() ||
-                   v.is<long long>()) {
-            device_shadow_update_optimistic(ieee_cp, key, vt,
-                                            (int32_t)v.as<long long>());
-        }
-        else if (v.is<float>()) {   // shadow keeps decimals as VAL_FLOAT ×100
-            device_shadow_update_optimistic(ieee_cp, key, VAL_FLOAT,
-                                            (int32_t)lround(v.as<double>() * 100.0));
-        }
-    }
-    reply_ok_or_err(fd, id, ok, "no zhc converter");
+    const DevCmdResult r = device_cmd_set_attr(ieee, 0, key, &val);
+    reply_ok_or_err(fd, id, r == DEVCMD_OK, device_cmd_result_str(r));
 }
 
 // ── device.options.set ────────────────────────────────────────────────

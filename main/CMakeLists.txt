@@ -49,6 +49,7 @@ idf_component_register(
         zap_store
         device_shadow
         zhc_adapter
+        device_cmd
         znp_driver
         zigbee_mgr
         zigbee_backend
