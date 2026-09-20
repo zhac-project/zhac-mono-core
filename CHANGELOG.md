@@ -11,6 +11,18 @@ an `## [Unreleased]` section accumulates work, and its contents become the relea
 
 ### Changed
 
+- **Device rename, delete and permit join go through `device_cmd`** (zhac-components). Rename
+  now validates names (quotes used to blank the Devices page) and reloads the rule engine's
+  name table; delete asks the device to leave and hides it (soft) or wipes everything (hard),
+  where before it only dropped the pool entry and never sent a leave request.
+
+### Fixed
+
+- **Adding a device works from the web UI.** The Devices page opens the join window over
+  WebSocket (`zigbee.permit_join`) and polls `zigbee.permit_join.status`; this build only had
+  the REST route, so the Add Device panel never opened the network. Both verbs now exist and
+  share the deadline with `POST /api/permit_join`.
+
 - **Every attribute write goes through `device_cmd`** (zhac-components): REST, WebSocket,
   MQTT / Home Assistant commands and collection fan-out now share one implementation, so they
   accept the same value types, answer with the same words, and all mirror the command into the

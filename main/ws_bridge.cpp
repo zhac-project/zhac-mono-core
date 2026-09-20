@@ -518,48 +518,24 @@ static void cmd_device_rename(int fd, uint32_t id, JsonDocument& doc) {
     if (!name || !name[0]) { send_err(fd, id, "missing name"); return; }
     uint64_t ieee = parse_ieee(ieee_s);
     if (ieee == 0) { send_err(fd, id, "bad ieee"); return; }
-
-    zigbee_pool_lock();
-    ZapDevice* dev = pool_find_by_ieee(ieee);
-    if (!dev) {
-        zigbee_pool_unlock();
-        send_err(fd, id, "device not found");
-        return;
-    }
-    snprintf(dev->friendly_name, sizeof(dev->friendly_name), "%s", name);
-    zap_store_mark_dirty(dev, ZAP_PERSIST_HIGH);
-    zigbee_pool_unlock();
-
-    reply_ok_or_err(fd, id, true, nullptr);
+    const DevCmdResult r = device_cmd_rename(ieee, name);   // validates, persists, reloads rules
+    reply_ok_or_err(fd, id, r == DEVCMD_OK, device_cmd_result_str(r));
 }
 
-// ── device.delete ────────────────────────────────────────────────────
+// ── device.delete ────────────────────────────────
 //
-// `args.hard = true` → also fire ZDO Mgmt_Leave (forces the device off
-// the network) and wipe the NVS row. Default (soft) just removes from
-// the in-memory pool; rejoining the device will fast-path back via the
-// last-known shadow.
+// One contract for every core, owned by device_cmd_remove: soft asks the
+// device to leave and tombstones it (hidden from lists, name kept for a
+// rejoin); `args.hard = true` also wipes the pool slot, shadow, converter
+// caches and the stored row.
 static void cmd_device_delete(int fd, uint32_t id, JsonDocument& doc) {
     const char* ieee_s = doc["args"]["ieee"] | (const char*)nullptr;
     const bool  hard   = doc["args"]["hard"] | false;
     if (!ieee_s) { send_err(fd, id, "missing ieee"); return; }
     uint64_t ieee = parse_ieee(ieee_s);
     if (ieee == 0) { send_err(fd, id, "bad ieee"); return; }
-
-    zigbee_pool_lock();
-    ZapDevice* dev = pool_find_by_ieee(ieee);
-    if (!dev) {
-        zigbee_pool_unlock();
-        send_err(fd, id, "device not found");
-        return;
-    }
-    const uint16_t idx = (uint16_t)(dev - pool_all());
-    zap_dev_mark_removed(dev);
-    pool_remove(idx);
-    zigbee_pool_unlock();
-
-    if (hard) zap_store_delete_device(ieee);
-    reply_ok_or_err(fd, id, true, nullptr);
+    const DevCmdResult r = device_cmd_remove(ieee, hard);
+    reply_ok_or_err(fd, id, r == DEVCMD_OK, device_cmd_result_str(r));
 }
 
 // ── device.attr.set ──────────────────────────────────────────────────
@@ -572,6 +548,28 @@ static void cmd_device_delete(int fd, uint32_t id, JsonDocument& doc) {
 // Mirrors net-core's `api_device_attr_set`. Keys live in the
 // PreparedDefinition's `to_zigbee[]` table; unknown keys return
 // "no zhc converter".
+// ── zigbee.permit_join / .status ─────────────────
+// The Devices page opens the join window over WS and polls the status; the
+// deadline lives in device_cmd so the REST route and this verb agree.
+static void cmd_zigbee_permit_join(int fd, uint32_t id, JsonDocument& doc) {
+    const int duration = doc["args"]["duration"] | -1;
+    if (duration < 0 || duration > 254) { send_err(fd, id, "duration 0-254"); return; }
+    const DevCmdResult r = device_cmd_permit_join((uint8_t)duration);
+    reply_ok_or_err(fd, id, r == DEVCMD_OK, "permit_join failed");
+}
+
+static void cmd_zigbee_permit_join_status(int fd, uint32_t id) {
+    bool open = false;
+    int  remaining = 0;
+    device_cmd_permit_join_status(&open, &remaining);
+    char buf[128];
+    int n = snprintf(buf, sizeof(buf),
+                     "{\"id\":%" PRIu32 ",\"ok\":true,\"data\":{"
+                     "\"open\":%s,\"remaining_sec\":%d}}",
+                     id, open ? "true" : "false", remaining);
+    ws_server_reply(fd, buf, n);
+}
+
 static void cmd_device_attr_set(int fd, uint32_t id, JsonDocument& doc) {
     const char* ieee_s = doc["args"]["ieee"] | (const char*)nullptr;
     const char* key    = doc["args"]["key"]  | (const char*)nullptr;
@@ -895,6 +893,8 @@ static void dispatch_envelope(int fd, JsonDocument& doc) {
     if (std::strcmp(cmd, "script.delete")      == 0) { cmd_script_delete(fd, id, doc);       return; }
     if (std::strcmp(cmd, "script.run")         == 0) { cmd_script_run(fd, id, doc);          return; }
     if (std::strcmp(cmd, "script.check")       == 0) { cmd_script_check(fd, id, doc);        return; }
+    if (std::strcmp(cmd, "zigbee.permit_join")  == 0) { cmd_zigbee_permit_join(fd, id, doc);  return; }
+    if (std::strcmp(cmd, "zigbee.permit_join.status") == 0) { cmd_zigbee_permit_join_status(fd, id); return; }
     if (std::strcmp(cmd, "zigbee.settings.set") == 0) { cmd_zigbee_settings_set(fd, id, doc); return; }
     if (std::strcmp(cmd, "zigbee.reset")        == 0) { cmd_zigbee_reset(fd, id);             return; }
     if (std::strcmp(cmd, "system.storage_reset") == 0) { cmd_storage_reset(fd, id);           return; }

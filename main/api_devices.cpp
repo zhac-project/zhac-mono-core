@@ -241,7 +241,7 @@ static esp_err_t handle_permit_join(httpd_req_t* req) {
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "duration 0-254");
         return ESP_FAIL;
     }
-    bool ok = zigbee_permit_join((uint8_t)duration);
+    bool ok = device_cmd_permit_join((uint8_t)duration) == DEVCMD_OK;   // records the deadline WS status reads
     httpd_resp_set_type(req, "application/json");
     if (ok) {
         char r[48];

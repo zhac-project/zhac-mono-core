@@ -52,6 +52,7 @@
 #include "zigbee_backend.h"
 #include "lua_engine.h"
 #include "simple_rules.h"
+#include "device_cmd.h"
 #include "device_options.h"
 #include "sys_state.h"
 #include "auth.h"
@@ -233,6 +234,9 @@ extern "C" void app_main() {
     // don't race the subsystem they depend on (same fix pattern that
     // resolved the dual-chip boot crash).
     simple_rules_init();
+    // Rules re-resolve friendly names after a rename (device_cmd cannot call
+    // simple_rules itself: simple_rules depends on it).
+    device_cmd_set_changed_hook([](uint64_t) { simple_rules_reload(); });
     const bool lua_ok = lua_engine_init();
     if (!lua_ok) {
         ESP_LOGW(TAG, "lua_engine_init returned false — scripts disabled");
