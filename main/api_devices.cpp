@@ -13,6 +13,7 @@
 #include "auth.h"
 #include "device_options.h"
 #include "esp_http_server.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "ArduinoJson.h"
 
@@ -47,15 +48,26 @@ static void fmt_ieee(uint64_t ieee, char* out, size_t cap) {
 // One device per chunk keeps peak heap small.
 static esp_err_t handle_get_devices(httpd_req_t* req) {
     httpd_resp_set_type(req, "application/json");
-
+    // Copy the pool under its lock, then serialize and send from the copy:
+    // a slow HTTP client must never hold up device reports and rules.
     zigbee_pool_lock();
-    ZapDevice* pool = pool_all();
-    uint16_t cnt = pool_count();
-
+    const uint16_t cnt = pool_count();
+    ZapDevice* snap = cnt ? static_cast<ZapDevice*>(
+        heap_caps_malloc(sizeof(ZapDevice) * cnt, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)) : nullptr;
+    uint16_t n_snap = 0;
+    if (snap) {
+        ZapDevice* pool = pool_all();
+        for (uint16_t i = 0; i < cnt; i++)
+            if (!zap_dev_is_removed(&pool[i])) snap[n_snap++] = pool[i];
+    }
+    zigbee_pool_unlock();
+    if (cnt && !snap) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "oom");
+        return ESP_FAIL;
+    }
     httpd_resp_sendstr_chunk(req, "[");
-    for (uint16_t i = 0; i < cnt; i++) {
-        const ZapDevice& d = pool[i];
-        if (zap_dev_is_removed(&d)) continue;
+    for (uint16_t i = 0; i < n_snap; i++) {
+        const ZapDevice& d = snap[i];
 
         JsonDocument doc;
         char ieee_s[19];
@@ -96,7 +108,7 @@ static esp_err_t handle_get_devices(httpd_req_t* req) {
     }
     httpd_resp_sendstr_chunk(req, "]");
     httpd_resp_sendstr_chunk(req, nullptr);  // terminate chunked response
-    zigbee_pool_unlock();
+    heap_caps_free(snap);
     return ESP_OK;
 }
 
@@ -261,7 +273,7 @@ static esp_err_t handle_device_state(httpd_req_t* req) {
     }
     const char* ieee_s = doc["ieee"]  | (const char*)nullptr;
     const char* key    = doc["key"]   | (const char*)nullptr;
-    uint64_t    value  = doc["value"] | (uint64_t)0;
+    const double value = doc["value"] | 0.0;   // integral or decimal; see send_number
     if (!ieee_s || !key) {
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "missing ieee or key");
         return ESP_FAIL;
@@ -279,12 +291,16 @@ static esp_err_t handle_device_state(httpd_req_t* req) {
         httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "device not found");
         return ESP_FAIL;
     }
-    uint8_t ep = dev->endpoints[0] ? dev->endpoints[0] : 1;
-    bool ok = zhac_adapter_send_uint(dev->ieee_addr,
-                                      dev->model_id,
-                                      dev->manufacturer_name,
-                                      dev->nwk_addr, ep, key, value);
+    // Copy what the send needs and release the pool: the radio dispatch
+    // blocks, and device reports must not wait on it (same as ws_bridge).
+    const uint64_t ieee_cp = dev->ieee_addr;
+    const uint16_t nwk_cp  = dev->nwk_addr;
+    const uint8_t  ep      = dev->endpoints[0] ? dev->endpoints[0] : 1;
+    char model_cp[64], manu_cp[64];
+    snprintf(model_cp, sizeof(model_cp), "%s", dev->model_id);
+    snprintf(manu_cp,  sizeof(manu_cp),  "%s", dev->manufacturer_name);
     zigbee_pool_unlock();
+    bool ok = zhac_adapter_send_number(ieee_cp, model_cp, manu_cp, nwk_cp, ep, key, value);
 
     httpd_resp_set_type(req, "application/json");
     if (ok) {

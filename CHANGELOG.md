@@ -8,6 +8,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 All notable changes to `zhac-mono-core` are recorded here, starting 2026-09-18; earlier work is
 in the git history and the README's "Known divergences". Format follows the other ZHAC repos:
 an `## [Unreleased]` section accumulates work, and its contents become the release-tag
+
+### Fixed
+
+- **Architecture review quick fixes:** sign-in fails closed on a storage fault (serial token
+  only, `503 storage_error`); `GET /api/devices` sends from a copy of the pool; the REST setter
+  releases the pool lock before dispatch and accepts decimals.
 annotation at `just release`.
 
 ## [Unreleased]
