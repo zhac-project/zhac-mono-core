@@ -9,6 +9,16 @@ All notable changes to `zhac-mono-core` are recorded here, starting 2026-09-18; 
 in the git history and the README's "Known divergences". Format follows the other ZHAC repos:
 an `## [Unreleased]` section accumulates work, and its contents become the release-tag
 
+### Changed
+
+- **Storage faults no longer erase the owner's data.** When the NVS partition cannot be
+  initialised at boot (no free pages, format version change) the hub used to erase it
+  silently: devices, rules, names, passwords gone. It now boots locked and empty instead:
+  sign-in forced on with a serial-only token, status `storage_error: true`, and Settings offers
+  "Erase storage and restart" (`system.storage_reset`, WebSocket) so the erase happens only
+  on the owner's word. Architecture review A3.
+  Wi-Fi comes up without storage (AP mode) so the recovery page is reachable.
+
 ### Fixed
 
 - **Architecture review quick fixes:** sign-in fails closed on a storage fault (serial token

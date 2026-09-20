@@ -104,6 +104,7 @@ static esp_err_t handle_get_status(httpd_req_t* req) {
     doc["auth_setup_required"] = sys_auth_enabled() && !auth_password_is_set();
     doc["auth_setup_secs_left"] = auth_setup_secs_left();   // 0 = closed; power-cycle the hub to reopen
     if (auth_storage_error()) doc["auth_storage_error"] = true;   // sign-in forced on, serial token only
+    if (sys_storage_error()) doc["storage_error"] = true;   // NVS unusable at boot; nothing erased; Settings offers the reset
     doc["clock_set"]       = time(nullptr) >= 1577836800;   // schedules wait until it is
     doc["ntp_server"]      = ntp_cfg_server();
     {   // the router's offer in use (DHCP option 42), when there is one

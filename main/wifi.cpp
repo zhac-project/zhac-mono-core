@@ -15,6 +15,7 @@
 // reboot or short outage recovers on its own without RTOS work in
 // this file.
 #include "wifi.h"
+#include "sys_state.h"
 #include "esp_event.h"
 #include "esp_log.h"
 #include "esp_mac.h"
@@ -80,6 +81,10 @@ void wifi_start() {
     s_netif_sta = esp_netif_create_default_wifi_sta();
 
     wifi_init_config_t init_cfg = WIFI_INIT_CONFIG_DEFAULT();
+    // Storage error boot: the Wi-Fi driver must not touch NVS or init fails
+    // and the hub could never show its recovery page. Credentials are
+    // unreadable too, so it falls to AP mode by itself.
+    if (sys_storage_error()) init_cfg.nvs_enable = 0;
     ESP_ERROR_CHECK(esp_wifi_init(&init_cfg));
     ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID,
                                                 &on_wifi_event, nullptr));
