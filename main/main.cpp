@@ -53,6 +53,7 @@
 #include "lua_engine.h"
 #include "simple_rules.h"
 #include "device_cmd.h"
+#include "ha_glue.h"
 #include "device_options.h"
 #include "sys_state.h"
 #include "auth.h"
@@ -309,6 +310,7 @@ extern "C" void app_main() {
     // from the REST handler. Mono boots cleanly either way.
     mqtt_gw_init();
     mqtt_gw_start();
+    ha_glue_start();   // Home Assistant discovery + inbound MQTT -> rules/Lua
     metrics_mqtt_publisher_start();   // metrics_mqtt.cpp (no-op if exporter off)
 
     if (lua_ok) {

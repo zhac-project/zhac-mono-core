@@ -9,6 +9,13 @@ All notable changes to `zhac-mono-core` are recorded here, starting 2026-09-18; 
 in the git history and the README's "Known divergences". Format follows the other ZHAC repos:
 an `## [Unreleased]` section accumulates work, and its contents become the release-tag
 
+### Added
+
+- **Home Assistant discovery** (`ha_glue.cpp`): the same bridge the wired build has, with
+  the Settings toggle and `ha_discovery` / `ha_prefix` in status. Enabling it also gives this
+  build an MQTT receive path: before, nothing set the client's rx callback, so `Mqtt#` rule
+  triggers and Lua `on_mqtt` never fired on the single-chip build.
+
 ### Changed
 
 - **Rule pushes come from the rule engine, not the transport.** `rule.added` / `rule.updated`

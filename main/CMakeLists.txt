@@ -19,6 +19,7 @@ idf_component_register(
         "api_groups.cpp"
         "log_ring.cpp"
         "metrics_mqtt.cpp"
+        "ha_glue.cpp"
         "api_remote.cpp"
         "api_wifi.cpp"
         "api_rules.cpp"
@@ -62,6 +63,7 @@ idf_component_register(
         remote_client
         mqtt
         mqtt_gw
+        ha_bridge
         ntp_cfg
         arduinojson
         spiffs

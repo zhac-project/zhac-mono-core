@@ -12,6 +12,7 @@
 #include "ArduinoJson.h"
 #include "esp_log.h"
 #include "mqtt_gw.h"
+#include "ha_bridge.h"
 #include "ntp_cfg.h"
 #include "sys_state.h"
 #include "zigbee_diagnostics.h"
@@ -37,6 +38,10 @@ bool system_apply_settings(const char* json, size_t len) {
     if (doc["mqtt_enabled"].is<bool>()) {
         if (doc["mqtt_enabled"].as<bool>()) mqtt_gw_on_sta_up();
         else                                 mqtt_gw_stop();
+    }
+    if (doc["ha_discovery"].is<bool>() || doc["ha_prefix"].is<const char*>()) {
+        const bool en = doc["ha_discovery"] | ha_bridge_enabled();
+        ha_bridge_configure(en, doc["ha_prefix"] | ha_bridge_prefix());
     }
 
     // Time server: ntp_cfg persists it and restarts SNTP, no reboot.
