@@ -11,6 +11,10 @@ an `## [Unreleased]` section accumulates work, and its contents become the relea
 
 ### Added
 
+- **`diag.tasks` + a Tasks card on the Diag page**: every task with its CPU share over the last
+  five seconds, the core it is pinned to, priority and stack headroom, so "core 0 sits at 25 %"
+  gets a name. `CONFIG_FREERTOS_VTASKLIST_INCLUDE_COREID=y` supplies the core.
+
 - **Home Assistant discovery** (`ha_glue.cpp`): the same bridge the wired build has, with
   the Settings toggle and `ha_discovery` / `ha_prefix` in status. Enabling it also gives this
   build an MQTT receive path: before, nothing set the client's rx callback, so `Mqtt#` rule
