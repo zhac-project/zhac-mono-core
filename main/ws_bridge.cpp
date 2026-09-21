@@ -34,6 +34,7 @@
 #include "zap_store.h"
 #include "device_shadow.h"
 #include "mqtt_gw.h"
+#include "mqtt_gw_cfg.h"
 #include "ArduinoJson.h"
 #include "sdkconfig.h"
 #include "device_options.h"
@@ -121,6 +122,7 @@ static void cmd_status(int fd, uint32_t id) {
     d["psram_free"]      = (uint32_t)heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
     d["zigbee_ok"]       = !zigbee_mgr_crashed();
     d["mqtt_connected"]  = mqtt_gw_is_connected();
+    mqtt_gw_cfg_fill_status(d);
     // Schedules (cron rules, Lua on_cron) wait until SNTP has set the clock;
     // the web UI's Rules page says so while this is false.
     d["clock_set"]       = time(nullptr) >= 1577836800;
@@ -474,7 +476,7 @@ static void cmd_device_get(int fd, uint32_t id, JsonDocument& doc) {
         switch (sa[j].val_type) {
             case VAL_INT:
             case VAL_BOOL: attrs[sa[j].key] = sa[j].int_val; break;
-            case VAL_STR:  attrs[sa[j].key] = sa[j].str_val; break;
+            case VAL_STR: { char sv[ATTR_STR_MAX + 1] = {}; memcpy(sv, sa[j].str_val, ATTR_STR_MAX); attrs[sa[j].key] = sv; break; }   // str_val need not end in NUL
             case VAL_FLOAT: attrs[sa[j].key] = static_cast<float>(sa[j].int_val) / 100.0f; break;  // stored x100
             default: break;
         }
@@ -939,7 +941,7 @@ static void on_zcl_attr(const Event& e) {
     switch (z.val_type) {
         case VAL_INT:
         case VAL_BOOL: d["value"] = z.int_val; break;
-        case VAL_STR:  d["value"] = z.str_val; break;
+        case VAL_STR: { char sv[ATTR_STR_MAX + 1] = {}; memcpy(sv, z.str_val, ATTR_STR_MAX); d["value"] = sv; break; }   // str_val need not end in NUL
         case VAL_FLOAT: d["value"] = static_cast<float>(z.int_val) / 100.0f; break;  // stored x100
         default: break;
     }

@@ -95,7 +95,7 @@ static esp_err_t handle_get_devices(httpd_req_t* req) {
             switch (sa[j].val_type) {
                 case VAL_INT:
                 case VAL_BOOL: attrs[sa[j].key] = sa[j].int_val; break;
-                case VAL_STR:  attrs[sa[j].key] = sa[j].str_val; break;
+                case VAL_STR: { char sv[ATTR_STR_MAX + 1] = {}; memcpy(sv, sa[j].str_val, ATTR_STR_MAX); attrs[sa[j].key] = sv; break; }   // str_val need not end in NUL
                 // Stored x100; divided here, at the JSON boundary, as on the
                 // other builds. Rules and Lua keep the raw x100 integer.
                 case VAL_FLOAT: attrs[sa[j].key] = static_cast<float>(sa[j].int_val) / 100.0f; break;

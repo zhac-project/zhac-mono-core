@@ -22,6 +22,7 @@
 #include "esp_timer.h"
 #include "esp_wifi.h"
 #include "mqtt_gw.h"
+#include "mqtt_gw_cfg.h"
 #include "ha_bridge.h"
 #include "ntp_cfg.h"
 #include "sdkconfig.h"
@@ -95,6 +96,7 @@ static esp_err_t handle_get_status(httpd_req_t* req) {
     doc["mqtt_connected"]  = mqtt_gw_is_connected();
     doc["mqtt_active"]     = mqtt_gw_is_active();
     doc["mqtt_root_topic"] = mqtt_gw_get_root_topic();
+    mqtt_gw_cfg_fill_status(doc.as<JsonObject>());   // mqtt_enabled, mqtt_broker, mqtt_client_id
     doc["ha_discovery"]    = ha_bridge_enabled();   // the web UI shows the HA card when present
     doc["ha_prefix"]       = ha_bridge_prefix();
 

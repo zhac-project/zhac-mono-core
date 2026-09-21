@@ -54,6 +54,7 @@
 #include "simple_rules.h"
 #include "device_cmd.h"
 #include "ha_glue.h"
+#include "mqtt_gw_cfg.h"
 #include "device_options.h"
 #include "sys_state.h"
 #include "auth.h"
@@ -310,6 +311,7 @@ extern "C" void app_main() {
     // from the REST handler. Mono boots cleanly either way.
     mqtt_gw_init();
     mqtt_gw_start();
+    mqtt_gw_cfg_boot();   // NVS settings: root topic, client id, arm if enabled (connects on IP)
     ha_glue_start();   // Home Assistant discovery + inbound MQTT -> rules/Lua
     metrics_mqtt_publisher_start();   // metrics_mqtt.cpp (no-op if exporter off)
 

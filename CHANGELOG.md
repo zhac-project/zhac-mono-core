@@ -30,6 +30,18 @@ an `## [Unreleased]` section accumulates work, and its contents become the relea
 
 ### Fixed
 
+- **String attributes showed the previous push's JSON text** (first seen on an Aqara
+  WXKG01LM button: `action` read `{"event":"attr.changed",...`). The shadow's string field
+  holds up to 48 bytes with no terminator; the WebSocket push and the device state built the
+  JSON straight from it, so ArduinoJson read on into the stack. Every site copies into a
+  terminated buffer now.
+
+- **MQTT settings survive a reboot and the client starts on its own.** The setters this
+  build used did not persist, nothing loaded the settings at boot, and nothing started the
+  client when Wi-Fi got an address, so a broker configured in Settings was gone after the next
+  reboot. The shared `mqtt_gw_cfg` handler (zhac-components) now loads and arms at boot, the
+  client connects on IP, and status reports `mqtt_enabled` / `mqtt_broker` / `mqtt_client_id`.
+
 - **Adding a device works from the web UI.** The Devices page opens the join window over
   WebSocket (`zigbee.permit_join`) and polls `zigbee.permit_join.status`; this build only had
   the REST route, so the Add Device panel never opened the network. Both verbs now exist and

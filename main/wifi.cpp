@@ -21,6 +21,7 @@
 #include "esp_mac.h"
 #include "esp_netif.h"
 #include "ntp_cfg.h"
+#include "mqtt_gw.h"
 #include "esp_wifi.h"
 #include "nvs.h"
 #include "nvs_flash.h"
@@ -58,6 +59,7 @@ static void on_wifi_event(void* /*arg*/, esp_event_base_t base,
             s_sntp_started = true;
             ntp_cfg_start();
         }
+        mqtt_gw_on_sta_up();   // starts the client ~5 s later if enabled + configured
     }
 }
 

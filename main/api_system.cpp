@@ -12,6 +12,7 @@
 #include "ArduinoJson.h"
 #include "esp_log.h"
 #include "mqtt_gw.h"
+#include "mqtt_gw_cfg.h"
 #include "ha_bridge.h"
 #include "ntp_cfg.h"
 #include "sys_state.h"
@@ -27,18 +28,8 @@ bool system_apply_settings(const char* json, size_t len) {
     JsonDocument doc;
     if (deserializeJson(doc, json, len)) return false;
 
-    // MQTT — the mqtt_gw setters self-persist (NVS mqtt_cfg) and restart the
-    // client as needed, so we just forward.
-    if (doc["broker_url"].is<const char*>())
-        mqtt_gw_set_broker_url(doc["broker_url"].as<const char*>());
-    if (doc["mqtt_root_topic"].is<const char*>())
-        mqtt_gw_set_root_topic(doc["mqtt_root_topic"].as<const char*>());
-    if (doc["mqtt_client_id"].is<const char*>())
-        mqtt_gw_set_client_id(doc["mqtt_client_id"].as<const char*>());
-    if (doc["mqtt_enabled"].is<bool>()) {
-        if (doc["mqtt_enabled"].as<bool>()) mqtt_gw_on_sta_up();
-        else                                 mqtt_gw_stop();
-    }
+    // MQTT: shared settings handler (persists to NVS mqtt_cfg, applies live).
+    mqtt_gw_cfg_apply(doc);
     if (doc["ha_discovery"].is<bool>() || doc["ha_prefix"].is<const char*>()) {
         const bool en = doc["ha_discovery"] | ha_bridge_enabled();
         ha_bridge_configure(en, doc["ha_prefix"] | ha_bridge_prefix());
