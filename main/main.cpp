@@ -51,6 +51,7 @@
 #include "zigbee_mgr.h"
 #include "zigbee_backend.h"
 #include "lua_engine.h"
+#include "rule_store.h"
 #include "simple_rules.h"
 #include "device_cmd.h"
 #include "ha_glue.h"
@@ -227,6 +228,13 @@ extern "C" void app_main() {
     // and HTTP stack are up so scripts that touch them at top level
     // don't race the subsystem they depend on (same fix pattern that
     // resolved the dual-chip boot crash).
+    // The rule store needs its NVS namespace opened and its PSRAM writeback
+    // started before simple_rules loads or saves anything. Without these two
+    // calls (only the P4 main-core had them) every save failed silently:
+    // "Rule saved" in the UI, nothing persisted, nothing listed.
+    rule_store_init();
+    rule_store_flush_init();
+    esp_register_shutdown_handler(rule_store_flush_now);
     simple_rules_init();
     // Rules re-resolve friendly names after a rename (device_cmd cannot call
     // simple_rules itself: simple_rules depends on it).

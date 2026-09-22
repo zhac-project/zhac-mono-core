@@ -34,6 +34,7 @@ an `## [Unreleased]` section accumulates work, and its contents become the relea
 
 ### Fixed
 
+- Rules were never stored: `main.cpp` never called `rule_store_init()` / `rule_store_flush_init()`, so every rule save failed silently behind a "Rule saved" toast. Both calls added before `simple_rules_init()`, plus the shutdown flush. Found on the wired S31, same code here; not yet run on mono hardware.
 - **`TaskEventBus` no longer burns a fifth of core 0 while idle**: the pump sleeps until a
   publish instead of polling every 20 ms (shared `event_bus_pump_run`).
 
