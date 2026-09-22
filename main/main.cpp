@@ -161,6 +161,15 @@ static void task_event_bus(void*) {
     event_bus_pump_run(nullptr);   // sleeps until a publish; never returns
 }
 
+// One line per boot step: where the internal DRAM goes. On the S31 it ran out
+// ~10 s after boot and late tasks (mqtt_client, OTA) silently failed to start;
+// the S3 has less of it. Read these before blaming a subsystem.
+static void heap_mark(const char* step) {
+    ESP_LOGI(TAG, "int-heap after %s: free=%u largest=%u", step,
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
+}
+
 extern "C" void app_main() {
     ESP_LOGI(TAG, "boot — zhac-mono-core (Phase 1 — shim + bridge)");
 
@@ -209,6 +218,7 @@ extern "C" void app_main() {
     esp_register_shutdown_handler(zap_store_flush_now);   // as on the P4: pending device-store writes survive a reboot
     device_shadow_init();
     zhac_adapter_init();
+    heap_mark("adapter");
     zb_diag_init();   // unhandled-frame ring for GET /api/diagnostics/unhandled
     znp_driver_init();
     zigbee_backend_register();
@@ -240,6 +250,7 @@ extern "C" void app_main() {
     grp_store_init();   // groups store mutex, before any server task exists
     esp_register_shutdown_handler(rule_store_flush_now);
     simple_rules_init();
+    heap_mark("rules");
     // Rules re-resolve friendly names after a rename (device_cmd cannot call
     // simple_rules itself: simple_rules depends on it).
     device_cmd_set_changed_hook([](uint64_t ieee) {
@@ -247,12 +258,14 @@ extern "C" void app_main() {
         ha_bridge_device_changed(ieee);   // Home Assistant sees the new name (the wired core does this too)
     });
     const bool lua_ok = lua_engine_init();
+    heap_mark("lua");
     if (!lua_ok) {
         ESP_LOGW(TAG, "lua_engine_init returned false — scripts disabled");
     }
     lua_engine_rules_hook_install();
 
     wifi_start();
+    heap_mark("wifi");
 
     // Mount SPA partition before httpd routes so the catchall finds
     // index.html. Empty partition is fine — handler returns 404 and
@@ -263,6 +276,7 @@ extern "C" void app_main() {
     // ws_server owns the httpd; register the placeholder "/" against
     // its handle until the SPA mount and REST handlers land.
     ws_server_init();
+    heap_mark("ws_server");
     httpd_handle_t hd = ws_server_get_handle();
     if (hd) {
         static const char* kAlivePage =
@@ -311,7 +325,8 @@ extern "C" void app_main() {
             if (s_remote_evt) xEventGroupSetBits(s_remote_evt, 1 << 3);
         }, nullptr);
 #endif
-    remote_client_init();   // no-op stub when remote disabled; reads NVS + self-enables
+    remote_client_init();
+    heap_mark("remote_client");   // no-op stub when remote disabled; reads NVS + self-enables
 
     // mqtt_gw is config-gated — if no broker URL is provisioned (NVS),
     // mqtt_gw_start logs and idles until mqtt_gw_configure() is called
@@ -319,8 +334,10 @@ extern "C" void app_main() {
     mqtt_gw_init();
     mqtt_gw_start();
     mqtt_gw_cfg_boot();   // NVS settings: root topic, client id, arm if enabled (connects on IP)
-    ha_glue_start();   // Home Assistant discovery + inbound MQTT -> rules/Lua
-    metrics_mqtt_publisher_start();   // metrics_mqtt.cpp (no-op if exporter off)
+    ha_glue_start();
+    heap_mark("mqtt_ha");   // Home Assistant discovery + inbound MQTT -> rules/Lua
+    metrics_mqtt_publisher_start();
+    heap_mark("metrics");   // metrics_mqtt.cpp (no-op if exporter off)
 
     if (lua_ok) {
         // Safe to load now: every subsystem a script might call into

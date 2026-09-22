@@ -11,6 +11,7 @@ an `## [Unreleased]` section accumulates work, and its contents become the relea
 
 ### Added
 
+- Boot log prints `int-heap after <step>` per init step (as the wired core does), so an exhausted internal heap is visible before a late task such as the MQTT client fails to start.
 - **`diag.tasks` + a Tasks card on the Diag page**: every task with its CPU share over the last
   five seconds, the core it is pinned to, priority and stack headroom, so "core 0 sits at 25 %"
   gets a name. `CONFIG_FREERTOS_VTASKLIST_INCLUDE_COREID=y` supplies the core.
