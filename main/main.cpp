@@ -51,9 +51,11 @@
 #include "zigbee_mgr.h"
 #include "zigbee_backend.h"
 #include "lua_engine.h"
+#include "groups_store.h"
 #include "rule_store.h"
 #include "simple_rules.h"
 #include "device_cmd.h"
+#include "ha_bridge.h"
 #include "ha_glue.h"
 #include "mqtt_gw_cfg.h"
 #include "device_options.h"
@@ -204,6 +206,7 @@ extern "C" void app_main() {
     event_bus_init();
     zap_store_init();
     zap_store_flush_init();
+    esp_register_shutdown_handler(zap_store_flush_now);   // as on the P4: pending device-store writes survive a reboot
     device_shadow_init();
     zhac_adapter_init();
     zb_diag_init();   // unhandled-frame ring for GET /api/diagnostics/unhandled
@@ -234,11 +237,15 @@ extern "C" void app_main() {
     // "Rule saved" in the UI, nothing persisted, nothing listed.
     rule_store_init();
     rule_store_flush_init();
+    grp_store_init();   // groups store mutex, before any server task exists
     esp_register_shutdown_handler(rule_store_flush_now);
     simple_rules_init();
     // Rules re-resolve friendly names after a rename (device_cmd cannot call
     // simple_rules itself: simple_rules depends on it).
-    device_cmd_set_changed_hook([](uint64_t) { simple_rules_reload(); });
+    device_cmd_set_changed_hook([](uint64_t ieee) {
+        simple_rules_reload();
+        ha_bridge_device_changed(ieee);   // Home Assistant sees the new name (the wired core does this too)
+    });
     const bool lua_ok = lua_engine_init();
     if (!lua_ok) {
         ESP_LOGW(TAG, "lua_engine_init returned false — scripts disabled");

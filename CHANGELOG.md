@@ -34,6 +34,10 @@ an `## [Unreleased]` section accumulates work, and its contents become the relea
 
 ### Fixed
 
+- MQTT published nothing after "connected" unless Home Assistant discovery was on: device updates only went through the HA bridge. Every update is now also published on `<root>/devices/<IEEE>/state` as `{"ieee","attrs":{key:value}}`, as the dual-chip S3 does.
+- Saving a Lua script from the web UI failed with "Unsupported" (HTTP 405): the SPA and net-core save with `POST /api/scripts/<name>`, this port accepted only `PUT`. POST without `/run` or `/check` now saves.
+- `groups_store` brought up to net-core's version: one recursive store mutex (created at boot via `grp_store_init()`), `grp_create()` allocates the id and saves under the lock (two concurrent creators could take the same slot), `group.list` holds the lock across its shared buffer. The port had carried the pre-lock copy.
+- `zap_store_flush_now` registered as a shutdown handler (as on the P4); renaming a device now also updates its Home Assistant discovery name (the changed-hook only reloaded rules).
 - Rules were never stored: `main.cpp` never called `rule_store_init()` / `rule_store_flush_init()`, so every rule save failed silently behind a "Rule saved" toast. Both calls added before `simple_rules_init()`, plus the shutdown flush. Found on the wired S31, same code here; not yet run on mono hardware.
 - **`TaskEventBus` no longer burns a fifth of core 0 while idle**: the pump sleeps until a
   publish instead of polling every 20 ms (shared `event_bus_pump_run`).
