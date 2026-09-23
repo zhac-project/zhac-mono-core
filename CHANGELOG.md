@@ -8,6 +8,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 All notable changes to `zhac-mono-core` are recorded here, starting 2026-09-18; earlier work is
 in the git history and the README's "Known divergences". Format follows the other ZHAC repos:
 an `## [Unreleased]` section accumulates work, and its contents become the release-tag
+annotation at `just release`.
+
+## [Unreleased]
+
+### Fixed
+
+- Cloud link events (only with `CONFIG_ZHAC_REMOTE_CLIENT_ENABLE`, off by default): every push reached the cloud wrapped twice, because the relay was handed the whole local `{"event","data"}` envelope and `remote_client_publish_event()` wraps it again, so the cloud found no device in `data` and dropped the update. Pushes also returned early when no browser tab was open, so the cloud heard nothing then. The relay now gets the bare payload and counts as a listener, as on the wired core. `ws_push` also grew from 512 to 1024 bytes and drops an oversized payload with a warning instead of sending truncated JSON.
 
 ### Added
 
@@ -78,9 +85,6 @@ an `## [Unreleased]` section accumulates work, and its contents become the relea
 - **Architecture review quick fixes:** sign-in fails closed on a storage fault (serial token
   only, `503 storage_error`); `GET /api/devices` sends from a copy of the pool; the REST setter
   releases the pool lock before dispatch and accepts decimals.
-annotation at `just release`.
-
-## [Unreleased]
 
 ### Added
 

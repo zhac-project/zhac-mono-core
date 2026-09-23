@@ -697,13 +697,45 @@ static void cmd_remote_disconnect(int fd, uint32_t id, JsonDocument& doc) {
 }
 #endif
 
-// ── push helper: {event, data} broadcast (+ relay mirror) ─────────────
+// ── push helpers: {event, data} to the local clients + the cloud relay ──
+//
+// The relay is a listener too: the cloud keeps its device shadow from these
+// pushes, so returning early whenever no browser tab was open starved it.
+static bool push_listeners() {
+    return ws_server_client_count() > 0 || remote_client_is_running();
+}
+
+// One event out to both sides. Local clients get the full envelope; the relay
+// gets the bare payload, because remote_client_publish_event() builds its own
+// envelope. Handing it the local one nested every event inside another
+// ({"event":..,"data":{"event":..,"data":{..}}}) and the cloud, finding no
+// ieee in `data`, dropped them all. Same fix as the wired core.
+static void push_event(const char* event, const char* payload, size_t len) {
+    if (ws_server_client_count() > 0) {
+        const size_t cap = len + std::strlen(event) + 32;   // {"event":"","data":} + NUL
+        char* env = static_cast<char*>(heap_caps_malloc(cap, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+        if (env) {
+            const size_t n = ws_event_envelope_build(env, cap, event, payload, len);
+            if (n) ws_server_broadcast(env, n);
+            heap_caps_free(env);
+        }
+    }
+    remote_client_publish_event(event, payload, len);
+}
+
 void ws_push(const char* event, JsonDocument& data) {
-    if (ws_server_client_count() == 0) return;
-    JsonDocument env; env["event"] = event; env["data"] = data;
-    char buf[512]; size_t n = serializeJson(env, buf, sizeof(buf));
-    ws_server_broadcast(buf, n);
-    remote_client_publish_event(event, buf, n);
+    if (!push_listeners()) return;
+    // 1024, not 512: serializeJson TRUNCATES rather than failing, so an
+    // undersized buffer sends malformed JSON that every client silently
+    // drops -- a push that looks sent and never arrives.
+    char buf[1024];
+    const size_t n = serializeJson(data, buf, sizeof(buf));
+    if (n == 0 || n >= sizeof(buf)) {
+        ESP_LOGW(TAG, "ws_push('%s') dropped: payload %u B exceeds %u B buffer",
+                 event, (unsigned)measureJson(data), (unsigned)sizeof(buf));
+        return;
+    }
+    push_event(event, buf, n);
 }
 
 // ── rule.* (SPA drives rules over WS; calls simple_rules + rule_store) ──
@@ -963,11 +995,9 @@ extern "C" void dispatch_envelope_for_remote(int fd, JsonDocument& doc) {
 // VAL_FLOAT readings (stored x100), strings for action attrs.
 
 static void on_zcl_attr(const Event& e) {
-    if (ws_server_client_count() == 0) return;
+    if (!push_listeners()) return;
     const auto& z = *reinterpret_cast<const ZclAttrEvent*>(e.data);
-    JsonDocument doc;
-    doc["event"] = "attr.changed";                 // SPA push name
-    JsonObject d = doc["data"].to<JsonObject>();
+    JsonDocument d;                                // payload of the "attr.changed" push
     char ieee_s[20];
     snprintf(ieee_s, sizeof(ieee_s), "0x%016" PRIX64, z.ieee);
     d["ieee"]     = ieee_s;
@@ -987,13 +1017,13 @@ static void on_zcl_attr(const Event& e) {
     // has set the clock (2020 or later), so the UI keeps the value it has.
     if (const time_t t = time(nullptr); t >= 1577836800) d["ts"] = static_cast<int64_t>(t);
     char buf[288];
-    size_t n = serializeJson(doc, buf, sizeof(buf));
-    ws_server_broadcast(buf, n);
-    remote_client_publish_event("attr.changed", buf, n);   // mirror to relay (no-op if off)
+    const size_t n = serializeJson(d, buf, sizeof(buf));
+    if (n == 0 || n >= sizeof(buf)) return;        // truncated JSON helps nobody
+    push_event("attr.changed", buf, n);
 }
 
 static void on_device_join(const Event& e) {
-    if (ws_server_client_count() == 0) return;
+    if (!push_listeners()) return;
     // DEVICE_JOIN payload starts with ieee + friendly name; encode the
     // standard layout used by zigbee_mgr.
     struct __attribute__((packed)) JoinPayload {
@@ -1001,32 +1031,27 @@ static void on_device_join(const Event& e) {
         char     friendly[30];
     };
     const auto& j = *reinterpret_cast<const JoinPayload*>(e.data);
-    char buf[224];
-    int n = snprintf(buf, sizeof(buf),
-                     "{\"event\":\"device.added\",\"data\":{\"ieee\":\"0x%016" PRIX64
-                     "\",\"friendly\":\"%.*s\",\"name\":\"%.*s\"}}",
+    char buf[192];
+    const int n = snprintf(buf, sizeof(buf),
+                     "{\"ieee\":\"0x%016" PRIX64 "\",\"friendly\":\"%.*s\",\"name\":\"%.*s\"}",
                      j.ieee, (int)sizeof(j.friendly), j.friendly,
                      (int)sizeof(j.friendly), j.friendly);
-    ws_server_broadcast(buf, n);
-    remote_client_publish_event("device.added", buf, (size_t)n);
+    if (n > 0 && (size_t)n < sizeof(buf)) push_event("device.added", buf, (size_t)n);
 }
 
 static void on_device_leave(const Event& e) {
-    if (ws_server_client_count() == 0) return;
+    if (!push_listeners()) return;
     uint64_t ieee = 0;
     std::memcpy(&ieee, e.data, sizeof(ieee));
-    char buf[112];
-    int n = snprintf(buf, sizeof(buf),
-                     "{\"event\":\"device.removed\",\"data\":{\"ieee\":\"0x%016" PRIX64 "\"}}",
-                     ieee);
-    ws_server_broadcast(buf, n);
-    remote_client_publish_event("device.removed", buf, (size_t)n);
+    char buf[48];
+    const int n = snprintf(buf, sizeof(buf), "{\"ieee\":\"0x%016" PRIX64 "\"}", ieee);
+    if (n > 0 && (size_t)n < sizeof(buf)) push_event("device.removed", buf, (size_t)n);
 }
 
 // Rules changed by any door (WebSocket, REST, a backup restore) -> one push,
 // built here from the store so REST edits reach open tabs and the relay too.
 static void on_rule_changed(const Event& e) {
-    if (ws_server_client_count() == 0) return;
+    if (!push_listeners()) return;
     RuleChangedEvent c{};
     std::memcpy(&c, e.data, sizeof(c));
     JsonDocument p;
