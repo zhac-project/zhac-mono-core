@@ -14,6 +14,7 @@ annotation at `just release`.
 
 ### Fixed
 
+- With more than roughly 25–35 devices, the device list stopped short without a word: `device.list` wrote every row into one 8 KB buffer and quit when it was full, so the web UI's device table was cut off and ZHAC Cloud (with the cloud link enabled) never learned about the remaining devices. The web UI now gets the whole list in a buffer sized to the pool; the cloud gets pages of at most 8 KB (`{"items":[…],"next_cursor":"0x…"}` in IEEE order, `next_cursor` left out on the last page), which its reconcile already follows. Same fix as zhac-wired-core; host test `main/test/host`. Not yet run on hardware.
 - Cloud link events (only with `CONFIG_ZHAC_REMOTE_CLIENT_ENABLE`, off by default): every push reached the cloud wrapped twice, because the relay was handed the whole local `{"event","data"}` envelope and `remote_client_publish_event()` wraps it again, so the cloud found no device in `data` and dropped the update. Pushes also returned early when no browser tab was open, so the cloud heard nothing then. The relay now gets the bare payload and counts as a listener, as on the wired core. `ws_push` also grew from 512 to 1024 bytes and drops an oversized payload with a warning instead of sending truncated JSON.
 
 ### Added
